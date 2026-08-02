@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+runtime/
+logs/
+*.sqlite3
+
+.DS_Store
+Thumbs.db
+
+*.zip
+*.tar.gz

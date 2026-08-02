@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MT5 AI Trading Bot Preview</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: rgba(14, 22, 44, 0.9);
+        --panel-2: rgba(18, 29, 56, 0.95);
+        --line: rgba(148, 163, 184, 0.18);
+        --text: #e5eefc;
+        --muted: #8ea3c7;
+        --accent: #79f0d0;
+        --accent-2: #6ea8ff;
+        --danger: #ff6f91;
+        --warning: #ffc857;
+        --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(110, 168, 255, 0.18), transparent 28%),
+          radial-gradient(circle at top right, rgba(121, 240, 208, 0.13), transparent 26%),
+          linear-gradient(180deg, #07101f 0%, #0d1528 100%);
+      }
+
+      .shell {
+        width: min(1480px, calc(100vw - 40px));
+        margin: 20px auto;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+        background: rgba(7, 14, 27, 0.88);
+        backdrop-filter: blur(18px);
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 22px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .logo {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        color: #02131b;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: 0.04em;
+      }
+
+      .brand p,
+      .status-strip span,
+      .meta-note,
+      .small {
+        color: var(--muted);
+      }
+
+      .brand p {
+        margin: 4px 0 0;
+        font-size: 12px;
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .chip {
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .chip strong {
+        color: var(--text);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 250px 1fr 340px;
+        min-height: 840px;
+      }
+
+      .sidebar {
+        padding: 18px 14px;
+        border-right: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
+      }
+
+      .nav-title {
+        margin: 4px 10px 14px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--muted);
+      }
+
+      .nav-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 14px;
+        border: 1px solid transparent;
+        border-radius: 14px;
+        margin-bottom: 8px;
+        color: var(--text);
+        background: transparent;
+      }
+
+      .nav-item.active {
+        border-color: rgba(121, 240, 208, 0.25);
+        background: linear-gradient(135deg, rgba(121, 240, 208, 0.12), rgba(110, 168, 255, 0.1));
+      }
+
+      .nav-item small {
+        color: var(--muted);
+      }
+
+      .main {
+        padding: 18px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
+          rgba(7, 14, 27, 0.62);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--panel);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 18px 10px;
+      }
+
+      .panel-header h2,
+      .panel-header h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .panel-body {
+        padding: 0 18px 18px;
+      }
+
+      .balance-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .stat {
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      .stat .label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted);
+      }
+
+      .stat .value {
+        margin-top: 8px;
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .equity {
+        color: var(--accent);
+      }
+
+      .floating {
+        color: var(--warning);
+      }
+
+      .chart-area {
+        height: 260px;
+        border-radius: 18px;
+        position: relative;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(121, 240, 208, 0.08), transparent 32%),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          #091426;
+        background-size: auto, 56px 56px, 56px 56px, auto;
+      }
+
+      .chart-line {
+        position: absolute;
+        inset: 20px 18px 26px;
+      }
+
+      .chart-line svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      .signal-badge {
+        position: absolute;
+        right: 20px;
+        top: 20px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        color: #032822;
+        background: var(--accent);
+      }
+
+      .grid-two {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 18px;
+      }
+
+      .watchlist table,
+      .positions table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 13px;
+        text-align: left;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      .positive {
+        color: var(--accent);
+      }
+
+      .negative {
+        color: var(--danger);
+      }
+
+      .rightbar {
+        padding: 18px;
+        border-left: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
+      }
+
+      .trade-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .button {
+        border: 0;
+        border-radius: 16px;
+        padding: 14px 16px;
+        font-weight: 700;
+        cursor: default;
+      }
+
+      .buy {
+        color: #04241d;
+        background: linear-gradient(135deg, #79f0d0, #7bdcb4);
+      }
+
+      .sell {
+        color: white;
+        background: linear-gradient(135deg, #ff5f8f, #ff7c6b);
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .field {
+        margin-bottom: 12px;
+      }
+
+      .field.full {
+        grid-column: 1 / -1;
+      }
+
+      .field label {
+        display: block;
+        margin-bottom: 7px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .input {
+        width: 100%;
+        padding: 12px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
+      .risk-alert,
+      .ai-card,
+      .log-card {
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .risk-alert {
+        margin-top: 14px;
+        border-color: rgba(255, 200, 87, 0.18);
+      }
+
+      .risk-alert strong {
+        color: var(--warning);
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .status-strip {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        padding: 14px 18px 18px;
+        border-top: 1px solid var(--line);
+      }
+
+      .status-box {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .status-box strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 14px;
+      }
+
+      .meta-note {
+        margin-top: 12px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 1280px) {
+        .layout {
+          grid-template-columns: 230px 1fr;
+        }
+
+        .rightbar {
+          grid-column: 1 / -1;
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+      }
+
+      @media (max-width: 980px) {
+        .layout,
+        .hero,
+        .grid-two,
+        .balance-grid,
+        .form-grid,
+        .status-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="topbar">
+        <div class="brand">
+          <div class="logo">M5</div>
+          <div>
+            <h1>MT5 AI Trading Bot</h1>
+            <p>Backend-first desktop shell preview</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <div class="chip">Mode: <strong>Mock Connector</strong></div>
+          <div class="chip">Account: <strong>demo@MockBroker-Demo</strong></div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <aside class="sidebar">
+          <div class="nav-title">Workspace</div>
+          <div class="nav-item active"><span>Dashboard</span><small>Live</small></div>
+          <div class="nav-item"><span>Market Watch</span><small>12</small></div>
+          <div class="nav-item"><span>Charts</span><small>M15</small></div>
+          <div class="nav-item"><span>Strategy</span><small>3 rules</small></div>
+          <div class="nav-item"><span>Positions</span><small>2 open</small></div>
+          <div class="nav-item"><span>Orders</span><small>History</small></div>
+          <div class="nav-item"><span>Risk</span><small>Protected</small></div>
+          <div class="nav-item"><span>AI Assistant</span><small>Advisory</small></div>
+          <div class="nav-item"><span>Backtesting</span><small>Queued</small></div>
+          <div class="nav-item"><span>Logs</span><small>JSON</small></div>
+          <div class="nav-item"><span>Settings</span><small>Config</small></div>
+        </aside>
+
+        <main class="main">
+          <section class="hero">
+            <div class="panel">
+              <div class="panel-header">
+                <h2>Account Dashboard</h2>
+                <div class="chip">Connected</div>
+              </div>
+              <div class="panel-body">
+                <div class="balance-grid">
+                  <div class="stat">
+                    <div class="label">Balance</div>
+                    <div class="value">$10,000</div>
+                  </div>
+                  <div class="stat">
+                    <div class="label">Equity</div>
+                    <div class="value equity">$10,124</div>
+                  </div>
+                  <div class="stat">
+                    <div class="label">Free Margin</div>
+                    <div class="value">$9,862</div>
+                  </div>
+                  <div class="stat">
+                    <div class="label">Floating P/L</div>
+                    <div class="value floating">+$124</div>
+                  </div>
+                </div>
+                <p class="meta-note">
+                  This is the first visual direction for the desktop shell: a dark terminal-style trading workspace with the dashboard centered, charts in the middle, and trade execution plus AI recommendations on the right.
+                </p>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <h2>AI Assistant</h2>
+                <div class="chip">Recommendation Only</div>
+              </div>
+              <div class="panel-body stack">
+                <div class="ai-card">
+                  <div class="small">Trend Bias</div>
+                  <h3>EURUSD slightly bullish</h3>
+                  <p class="meta-note">EMA20 remains above EMA50 on M15. Momentum weakens near intraday resistance.</p>
+                </div>
+                <div class="ai-card">
+                  <div class="small">Suggested Risk</div>
+                  <h3>SL 1.0984 / TP 1.1046</h3>
+                  <p class="meta-note">Suggested stop is based on recent volatility band and local structure.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" style="margin-bottom: 18px;">
+            <div class="panel-header">
+              <h2>Chart Panel</h2>
+              <div class="chip">EURUSD · M15</div>
+            </div>
+            <div class="panel-body">
+              <div class="chart-area">
+                <div class="signal-badge">AI Overlay: ON</div>
+                <div class="chart-line">
+                  <svg viewBox="0 0 800 260" preserveAspectRatio="none">
+                    <polyline
+                      fill="none"
+                      stroke="rgba(110,168,255,0.95)"
+                      stroke-width="4"
+                      points="0,170 60,140 120,152 180,132 240,148 300,110 360,118 420,96 480,106 540,88 600,74 660,84 720,56 800,68"
+                    />
+                    <polyline
+                      fill="none"
+                      stroke="rgba(121,240,208,0.95)"
+                      stroke-width="3"
+                      stroke-dasharray="10 10"
+                      points="0,190 60,182 120,176 180,162 240,154 300,142 360,136 420,126 480,116 540,110 600,98 660,88 720,80 800,70"
+                    />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="grid-two">
+            <div class="panel watchlist">
+              <div class="panel-header">
+                <h2>Market Watch</h2>
+                <div class="chip">Favorites</div>
+              </div>
+              <div class="panel-body">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Symbol</th>
+                      <th>Bid</th>
+                      <th>Ask</th>
+                      <th>Spread</th>
+                      <th>Move</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>EURUSD</td>
+                      <td>1.1000</td>
+                      <td>1.1002</td>
+                      <td>0.2</td>
+                      <td class="positive">+0.31%</td>
+                    </tr>
+                    <tr>
+                      <td>GBPUSD</td>
+                      <td>1.2741</td>
+                      <td>1.2744</td>
+                      <td>0.3</td>
+                      <td class="negative">-0.12%</td>
+                    </tr>
+                    <tr>
+                      <td>XAUUSD</td>
+                      <td>2349.21</td>
+                      <td>2349.58</td>
+                      <td>0.37</td>
+                      <td class="positive">+0.84%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel positions">
+              <div class="panel-header">
+                <h2>Open Positions</h2>
+                <div class="chip">2 Active</div>
+              </div>
+              <div class="panel-body">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Pair</th>
+                      <th>Side</th>
+                      <th>Lots</th>
+                      <th>P/L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>EURUSD</td>
+                      <td>Buy</td>
+                      <td>0.20</td>
+                      <td class="positive">+$42</td>
+                    </tr>
+                    <tr>
+                      <td>XAUUSD</td>
+                      <td>Sell</td>
+                      <td>0.10</td>
+                      <td class="positive">+$82</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </main>
+
+        <aside class="rightbar">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Trading Panel</h2>
+              <div class="chip">Manual Trade</div>
+            </div>
+            <div class="panel-body">
+              <div class="trade-actions">
+                <button class="button buy">Buy</button>
+                <button class="button sell">Sell</button>
+              </div>
+
+              <div class="form-grid">
+                <div class="field">
+                  <label>Symbol</label>
+                  <div class="input">EURUSD</div>
+                </div>
+                <div class="field">
+                  <label>Lot Size</label>
+                  <div class="input">0.10</div>
+                </div>
+                <div class="field">
+                  <label>Stop Loss</label>
+                  <div class="input">1.0984</div>
+                </div>
+                <div class="field">
+                  <label>Take Profit</label>
+                  <div class="input">1.1046</div>
+                </div>
+                <div class="field full">
+                  <label>Comment</label>
+                  <div class="input">Manual buy with AI advisory</div>
+                </div>
+              </div>
+
+              <div class="risk-alert">
+                <strong>Risk Check</strong>
+                <p class="meta-note">Approved. Volume is within max lot size, daily loss threshold is not breached, and max trades is not exceeded.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" style="margin-top: 16px;">
+            <div class="panel-header">
+              <h2>Latest Logs</h2>
+              <div class="chip">JSON</div>
+            </div>
+            <div class="panel-body stack">
+              <div class="log-card">
+                <div class="small">11:06:55 UTC</div>
+                <strong>Application context initialized</strong>
+                <p class="meta-note">mock_connector=true</p>
+              </div>
+              <div class="log-card">
+                <div class="small">11:07:03 UTC</div>
+                <strong>Risk check approved</strong>
+                <p class="meta-note">EURUSD buy 0.10 lots</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="status-strip">
+        <div class="status-box">
+          <span>Connection</span>
+          <strong>Online</strong>
+        </div>
+        <div class="status-box">
+          <span>Balance</span>
+          <strong>$10,000</strong>
+        </div>
+        <div class="status-box">
+          <span>Equity</span>
+          <strong>$10,124</strong>
+        </div>
+        <div class="status-box">
+          <span>Spread</span>
+          <strong>0.2 pips</strong>
+        </div>
+        <div class="status-box">
+          <span>Latency</span>
+          <strong>37 ms</strong>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
