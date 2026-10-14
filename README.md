@@ -7,13 +7,15 @@ Backend-first scaffold for an MT5 AI trading bot desktop application.
 | Area | State |
 |---|---|
 | Configuration, logging, SQLite persistence | Implemented |
-| MT5 account, tick and order access | Implemented (`MetaTrader5Connector`) |
+| MT5 account, tick, candle and order access | Implemented (`MetaTrader5Connector`) |
 | Mock broker for offline development | Implemented (`MockMt5Connector`, the default) |
 | Risk controls | Implemented |
 | Indicators (SMA, EMA, RSI) | Implemented |
+| Desktop screens | Implemented — five live screens, three explicit placeholders |
+| Chart rendering | Implemented — candlesticks and line charts painted with `QPainter` |
 | Strategy rule evaluation | **Not implemented** — `StrategyEngine.evaluate_tick` returns no signals |
 | AI prediction and training | **Not implemented** — advisory placeholder and a `skipped` trainer |
-| Desktop screens | **Not implemented** — the GUI is a tab shell |
+| Position, daily P/L and drawdown tracking | **Not implemented** — the connector has no positions or deals feed |
 
 Live order submission is implemented but has not been exercised against a real
 terminal. Run it against a demo account first.
@@ -76,6 +78,35 @@ With PySide6 installed the desktop shell opens. Otherwise the process reports
 the account snapshot from the backend and exits. Startup failures caused by an
 unavailable terminal print a single readable message and exit with status 2.
 
+## Desktop shell
+
+| Tab | Backed by | Notes |
+|---|---|---|
+| Dashboard | `AccountService`, `MarketDataService`, `OrderEventRepository` | KPI strip, price chart, watchlist, recent order events, risk summary |
+| Market Terminal | `MarketDataService`, `OrderManager` | Watchlist, candlesticks with timeframes, quote strip, order ticket |
+| Orders | `OrderEventRepository` | Append-only audit trail and per-status counts |
+| Risk | `RiskManager`, live `RiskProfile` | Editor for the running profile; probe evaluates a sample order |
+| Settings | `Settings`, `AccountRepository` | Connection, storage paths, account profiles, theme |
+| Strategy Manager, AI Assistant, Logs | — | Placeholders that state what is missing and what is planned |
+
+Conventions the screens follow:
+
+- **Nothing pretends to be live.** Panels without a data source show an explicit
+  *not connected* state and list what they would need, rather than sample rows.
+- **Simulated data is labelled.** Candles from the mock broker carry a
+  `simulated` flag, and any panel showing them displays a `SIMULATED` pill.
+- **Order entry is sandbox-only.** In mock mode the ticket submits to the mock
+  broker. In live mode the buttons are disabled, because open positions, daily
+  P/L and drawdown are not tracked, so the risk limits could not be evaluated
+  before sending an order. The ticket says so on screen.
+- **Risk limits live in memory.** The Risk tab applies to the running session.
+  Persisting the profile would need a `risk_profiles` table; the database stores
+  account profiles and order events only.
+
+Themes are dark (default) and light, selected with `MT5_THEME` or from the
+Settings tab. Both use solid surfaces, a single accent colour and monospace
+figures for prices; there are no gradients, glows or decorative animation.
+
 ## Risk controls
 
 `RiskManager.evaluate` requires the account state explicitly — open trade count,
@@ -98,6 +129,12 @@ python -m pytest
 ```
 
 The suite covers the indicators, configuration parsing, logging reconfiguration,
-repositories, the risk matrix, order-event auditing, the live connector against a
-fake `MetaTrader5` module, and application-context startup in both broker modes.
-No test requires network access, a terminal, or PySide6.
+repositories, the risk matrix, order-event auditing, number formatting, the live
+connector against a fake `MetaTrader5` module, and application-context startup in
+both broker modes. `tests/test_gui.py` drives the desktop shell — every tab
+refreshes, the order ticket records accepted and risk-rejected orders, the risk
+editor round-trips into the live profile, and the charts paint with and without
+data — using Qt's `offscreen` platform, which `tests/conftest.py` selects before
+PySide6 is imported. That module skips itself when PySide6 is absent.
+
+No test requires network access, a running terminal, or a display.

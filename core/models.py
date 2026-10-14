@@ -6,6 +6,19 @@ from typing import Any
 
 VALID_ORDER_SIDES = frozenset({"buy", "sell"})
 
+TIMEFRAME_MINUTES: dict[str, int] = {
+    "M1": 1,
+    "M5": 5,
+    "M15": 15,
+    "M30": 30,
+    "H1": 60,
+    "H4": 240,
+    "D1": 1440,
+}
+DEFAULT_TIMEFRAME = "M15"
+DEFAULT_CANDLE_COUNT = 180
+MAX_CANDLE_COUNT = 1000
+
 
 @dataclass(slots=True)
 class AccountProfile:
@@ -35,6 +48,18 @@ class SymbolTick:
     spread: float
     volume: int
     timestamp: datetime
+    digits: int = 5
+
+
+@dataclass(slots=True)
+class Candle:
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    simulated: bool = False
 
 
 @dataclass(slots=True)

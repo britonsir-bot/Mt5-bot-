@@ -151,6 +151,36 @@ def test_a_missing_tick_is_reported(install_fake_mt5):
         connector.send_order(FULL_REQUEST)
 
 
+def test_get_ohlc_maps_broker_rates(install_fake_mt5):
+    connector, fake = connect(install_fake_mt5)
+    candles = connector.get_ohlc("EURUSD", "M15", 10)
+    assert len(candles) == 10
+    assert candles[0].simulated is False
+    assert candles[0].open == pytest.approx(1.1000)
+    assert candles[0].volume == 100
+    assert fake.rate_requests[0][0] == "EURUSD"
+    assert fake.rate_requests[0][1] == fake.TIMEFRAME_M15
+    assert fake.rate_requests[0][3] == 10
+
+
+def test_get_ohlc_rejects_an_unsupported_timeframe(install_fake_mt5):
+    connector, _ = connect(install_fake_mt5)
+    with pytest.raises(ConnectorError):
+        connector.get_ohlc("EURUSD", "W1", 10)
+
+
+def test_get_ohlc_reports_missing_rates(install_fake_mt5):
+    connector, _ = connect(install_fake_mt5, rates_none=True)
+    with pytest.raises(ConnectorError):
+        connector.get_ohlc("EURUSD", "M15", 10)
+
+
+def test_get_ohlc_requires_a_session(install_fake_mt5):
+    connector, _ = connect(install_fake_mt5, initialize_result=False)
+    with pytest.raises(ConnectorError):
+        connector.get_ohlc("EURUSD", "M15", 10)
+
+
 def test_disconnect_only_shuts_down_an_active_session(install_fake_mt5):
     connector, fake = connect(install_fake_mt5)
     connector.disconnect()

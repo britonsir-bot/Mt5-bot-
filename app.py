@@ -9,6 +9,7 @@ from config.settings import Settings
 from core.account_service import AccountService
 from core.logging_config import configure_logging
 from core.market_data import MarketDataService
+from core.models import RiskProfile
 from core.mt5_connector import build_connector
 from core.order_manager import OrderManager
 from core.risk_manager import RiskManager
@@ -83,6 +84,7 @@ def create_app_context(base_dir: str | None = None) -> dict[str, Any]:
     account_service = AccountService(connector)
     market_data_service = MarketDataService(connector)
     risk_manager = RiskManager()
+    risk_profile = RiskProfile.default()
     order_manager = OrderManager(
         connector=connector,
         risk_manager=risk_manager,
@@ -108,6 +110,7 @@ def create_app_context(base_dir: str | None = None) -> dict[str, Any]:
         "account_service": account_service,
         "market_data_service": market_data_service,
         "risk_manager": risk_manager,
+        "risk_profile": risk_profile,
         "order_manager": order_manager,
         "strategy_engine": strategy_engine,
         "ai_inference": ai_inference,
