@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,45 @@ from core.strategy_engine import StrategyEngine
 from database.db import Database
 from database.repositories import AccountRepository, OrderEventRepository
 
+PROFILE_NAME = "default-demo"
+DEMO_LOGIN = "demo"
+DEMO_SERVER = "MockBroker-Demo"
+DEMO_TERMINAL_PATH = "mock-terminal"
+
+
+def _seed_account_profile(
+    settings: Settings, repository: AccountRepository, logger: logging.Logger
+) -> None:
+    if repository.get_profile(PROFILE_NAME) is not None:
+        return
+
+    if settings.use_mock_connector:
+        login, server, terminal_path = DEMO_LOGIN, DEMO_SERVER, DEMO_TERMINAL_PATH
+    else:
+        login = settings.account_login
+        server = settings.account_server
+        terminal_path = settings.account_terminal_path
+        if not (login and server and terminal_path):
+            logger.warning(
+                "No live account profile was seeded; set MT5_LOGIN, MT5_SERVER and "
+                "MT5_TERMINAL_PATH to persist one.",
+                extra={
+                    "event_payload": {
+                        "login_configured": login is not None,
+                        "server_configured": server is not None,
+                        "terminal_path_configured": terminal_path is not None,
+                    }
+                },
+            )
+            return
+
+    repository.upsert(
+        profile_name=PROFILE_NAME,
+        login=login,
+        server=server,
+        terminal_path=terminal_path,
+    )
+
 
 def create_app_context(base_dir: str | None = None) -> dict[str, Any]:
     settings = Settings.from_env(Path(base_dir) if base_dir else None)
@@ -28,6 +68,18 @@ def create_app_context(base_dir: str | None = None) -> dict[str, Any]:
     order_event_repository = OrderEventRepository(database)
 
     connector = build_connector(settings.use_mock_connector)
+    if settings.auto_login and not connector.is_connected():
+        if connector.connect():
+            logger.info(
+                "Connected to the trading terminal at startup.",
+                extra={"event_payload": {"auto_login": True}},
+            )
+        else:
+            logger.warning(
+                "Automatic login failed; the terminal connection will be retried on demand.",
+                extra={"event_payload": {"auto_login": True}},
+            )
+
     account_service = AccountService(connector)
     market_data_service = MarketDataService(connector)
     risk_manager = RiskManager()
@@ -39,12 +91,7 @@ def create_app_context(base_dir: str | None = None) -> dict[str, Any]:
     strategy_engine = StrategyEngine()
     ai_inference = InferenceService()
 
-    account_repository.upsert(
-        profile_name="default-demo",
-        login="demo",
-        server="MockBroker-Demo" if settings.use_mock_connector else "LiveBroker",
-        terminal_path="mock-terminal",
-    )
+    _seed_account_profile(settings, account_repository, logger)
 
     logger.info(
         "Application context initialized",

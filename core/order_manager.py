@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Protocol
 
-from core.exceptions import RiskViolationError
+from core.exceptions import Mt5BotError, RiskViolationError
 from core.models import OrderEvent, RiskProfile, TradeRequest, TradeResult
 from core.mt5_connector import Mt5Connector
 from core.risk_manager import RiskManager
@@ -28,9 +28,11 @@ class OrderManager:
         self,
         request: TradeRequest,
         risk_profile: RiskProfile,
-        open_trade_count: int = 0,
-        daily_pnl: float = 0.0,
-        current_drawdown: float = 0.0,
+        *,
+        open_trade_count: int,
+        daily_pnl: float,
+        current_drawdown: float,
+        equity: float,
     ) -> TradeResult:
         decision = self._risk_manager.evaluate(
             request=request,
@@ -38,12 +40,18 @@ class OrderManager:
             open_trade_count=open_trade_count,
             daily_pnl=daily_pnl,
             current_drawdown=current_drawdown,
+            equity=equity,
         )
         if not decision.allowed:
             self._record_event(request, "rejected", decision.reason)
             raise RiskViolationError(decision.reason)
 
-        result = self._connector.send_order(request)
+        try:
+            result = self._connector.send_order(request)
+        except Mt5BotError as exc:
+            self._record_event(request, "failed", str(exc))
+            raise
+
         status = "accepted" if result.accepted else "failed"
         self._record_event(request, status, result.message)
         return result

@@ -3,10 +3,16 @@ from __future__ import annotations
 import sys
 
 from app import create_app_context
+from core.exceptions import Mt5BotError
+from gui.theme import apply_theme
 
 
 def main() -> int:
-    context = create_app_context()
+    try:
+        context = create_app_context()
+    except Mt5BotError as exc:
+        print(f"Unable to initialise the trading bot: {exc}", file=sys.stderr)
+        return 2
 
     try:
         from PySide6.QtWidgets import QApplication
@@ -20,6 +26,7 @@ def main() -> int:
         return 0
 
     app = QApplication(sys.argv)
+    apply_theme(app, context["settings"].theme)
     window = MainWindow(context)
     window.resize(1024, 720)
     window.show()
