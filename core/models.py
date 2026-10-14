@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, time
 from typing import Any
 
+VALID_ORDER_SIDES = frozenset({"buy", "sell"})
+
 
 @dataclass(slots=True)
 class AccountProfile:
@@ -45,6 +47,18 @@ class TradeRequest:
     magic_number: int = 0
     comment: str = ""
 
+    def __post_init__(self) -> None:
+        self.symbol = self.symbol.strip().upper()
+        self.side = self.side.strip().lower()
+        if not self.symbol:
+            raise ValueError("symbol must not be empty")
+        if self.side not in VALID_ORDER_SIDES:
+            raise ValueError(
+                f"side must be one of {sorted(VALID_ORDER_SIDES)}, got {self.side!r}"
+            )
+        if self.volume <= 0:
+            raise ValueError("volume must be greater than zero")
+
 
 @dataclass(slots=True)
 class TradeResult:
@@ -61,7 +75,6 @@ class RiskProfile:
     max_drawdown: float
     max_trades: int
     max_lot_size: float
-    risk_percent: float
     daily_profit_target: float
     equity_protection: float
     allowed_start_time: time | None = None
@@ -75,7 +88,6 @@ class RiskProfile:
             max_drawdown=1000.0,
             max_trades=5,
             max_lot_size=max_lot_size,
-            risk_percent=1.0,
             daily_profit_target=1000.0,
             equity_protection=1000.0,
         )

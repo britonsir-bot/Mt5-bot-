@@ -16,15 +16,20 @@ class StrategyDefinition:
 
 
 class StrategyEngine:
+    """Registry for strategy definitions.
+
+    Rule evaluation is not implemented in this scaffold, so ``evaluate_tick``
+    returns no signals rather than a placeholder signal that a caller might act on.
+    """
+
     def __init__(self) -> None:
         self._strategies: list[StrategyDefinition] = []
 
     def register(self, strategy: StrategyDefinition) -> None:
         self._strategies.append(strategy)
 
+    def strategies(self) -> list[StrategyDefinition]:
+        return list(self._strategies)
+
     def evaluate_tick(self, tick: SymbolTick) -> list[str]:
-        signals: list[str] = []
-        for strategy in self._strategies:
-            if strategy.enabled and strategy.symbol == tick.symbol:
-                signals.append(f"{strategy.name}: no-op")
-        return signals
+        return []

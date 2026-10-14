@@ -5,6 +5,8 @@ import json
 import logging
 from pathlib import Path
 
+LOGGER_NAME = "mt5_bot"
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -21,15 +23,24 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-def configure_logging(log_dir: Path) -> logging.Logger:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("mt5_bot")
-    logger.setLevel(logging.INFO)
+class _LogTarget:
+    path: Path | None = None
 
-    if logger.handlers:
+
+def configure_logging(log_dir: Path, level: int = logging.INFO) -> logging.Logger:
+    log_dir = Path(log_dir)
+    log_file = (log_dir / "application.log").resolve()
+    logger = logging.getLogger(LOGGER_NAME)
+    logger.setLevel(level)
+
+    if _LogTarget.path == log_file and logger.handlers:
         return logger
 
-    log_file = log_dir / "application.log"
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+
+    log_dir.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(JsonFormatter())
     logger.addHandler(file_handler)
@@ -38,4 +49,5 @@ def configure_logging(log_dir: Path) -> logging.Logger:
     stream_handler.setFormatter(JsonFormatter())
     logger.addHandler(stream_handler)
 
+    _LogTarget.path = log_file
     return logger

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Any
 
 from core.models import AccountProfile, OrderEvent
 from database.db import Database
@@ -34,10 +34,33 @@ class AccountRepository:
             terminal_path=terminal_path,
         )
 
+    def get_profile(self, profile_name: str) -> AccountProfile | None:
+        with self._database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT profile_name, login, server, terminal_path
+                FROM accounts
+                WHERE profile_name = ?
+                """,
+                (profile_name,),
+            ).fetchone()
+        if row is None:
+            return None
+        return AccountProfile(
+            profile_name=row["profile_name"],
+            login=row["login"],
+            server=row["server"],
+            terminal_path=row["terminal_path"],
+        )
+
     def list_profiles(self) -> list[AccountProfile]:
         with self._database.connect() as connection:
             rows = connection.execute(
-                "SELECT profile_name, login, server, terminal_path FROM accounts"
+                """
+                SELECT profile_name, login, server, terminal_path
+                FROM accounts
+                ORDER BY profile_name ASC
+                """
             ).fetchall()
         return [
             AccountProfile(
@@ -71,7 +94,7 @@ class OrderEventRepository:
                 ),
             )
 
-    def list_all(self) -> Iterable[dict]:
+    def list_all(self) -> list[dict[str, Any]]:
         with self._database.connect() as connection:
             rows = connection.execute(
                 """
