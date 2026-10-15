@@ -28,7 +28,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     apply_theme(app, context["settings"].theme)
     window = MainWindow(context)
-    window.resize(1024, 720)
+    window.resize(1440, 900)
     window.show()
     return app.exec()
 

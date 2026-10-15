@@ -7,6 +7,9 @@ import types
 
 import pytest
 
+# Qt must be told to render without a display before any PySide6 import happens.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 TRADE_RETCODE_DONE = 10009
 
 
@@ -44,6 +47,10 @@ class _OrderResult:
         self.comment = comment
 
 
+RATE_START = 1_700_000_000
+RATE_STEP = 900
+
+
 class _FakeMt5:
     TRADE_ACTION_DEAL = 1
     ORDER_TYPE_BUY = 0
@@ -53,6 +60,13 @@ class _FakeMt5:
     ORDER_FILLING_IOC = 1
     ORDER_FILLING_RETURN = 2
     TRADE_RETCODE_DONE = TRADE_RETCODE_DONE
+    TIMEFRAME_M1 = 1
+    TIMEFRAME_M5 = 5
+    TIMEFRAME_M15 = 15
+    TIMEFRAME_M30 = 30
+    TIMEFRAME_H1 = 16385
+    TIMEFRAME_H4 = 16388
+    TIMEFRAME_D1 = 16408
 
     _METHODS = (
         "initialize",
@@ -61,6 +75,7 @@ class _FakeMt5:
         "symbol_info",
         "symbol_select",
         "symbol_info_tick",
+        "copy_rates_from_pos",
         "order_send",
         "last_error",
     )
@@ -70,10 +85,12 @@ class _FakeMt5:
         self.symbol_info_none = options.get("symbol_info_none", False)
         self.order_result_none = options.get("order_result_none", False)
         self.select_result = options.get("select_result", True)
+        self.rates_none = options.get("rates_none", False)
         self.initialized = False
         self.shutdown_calls = 0
         self.selected: list[tuple[str, bool]] = []
         self.sent_orders: list[dict] = []
+        self.rate_requests: list[tuple[str, int, int, int]] = []
         self._symbol = _SymbolInfo(
             visible=options.get("visible", True),
             filling_mode=options.get("filling_mode", 1),
@@ -118,6 +135,22 @@ class _FakeMt5:
 
     def symbol_info_tick(self, symbol):
         return self._tick
+
+    def copy_rates_from_pos(self, symbol, timeframe, start, count):
+        self.rate_requests.append((symbol, timeframe, start, count))
+        if self.rates_none:
+            return None
+        return [
+            {
+                "time": RATE_START + index * RATE_STEP,
+                "open": 1.1000 + index * 0.0001,
+                "high": 1.1005 + index * 0.0001,
+                "low": 1.0995 + index * 0.0001,
+                "close": 1.1002 + index * 0.0001,
+                "tick_volume": 100 + index,
+            }
+            for index in range(count)
+        ]
 
     def order_send(self, payload):
         self.sent_orders.append(payload)

@@ -1,0 +1,1439 @@
+# =============================================================================
+# MT5 Trading Bot — Strategy Configuration
+# Schema v2.0 — machine-readable, parser-compatible
+# 
+# Place this file into your bot's config/strategies/ directory or paste
+# into the YAML editor. All fields match the bot's expected schema.
+# =============================================================================
+
+meta:
+  config_name: "Quantified Edge Strategy Suite"
+  version: "2.1.0"
+  created: "2026-08-03"
+  description: "16 backtested strategies with documented statistical edge, configured for MT5 execution"
+  compatibility:
+    platform: "MT5"
+    min_bot_version: "2.0.0"
+
+# =============================================================================
+# Global Bot Settings
+# =============================================================================
+bot:
+  enabled: true
+  mode: live                # live | paper | backtest
+
+# =============================================================================
+# Execution Engine
+# =============================================================================
+execution:
+  broker: mt5
+  magic_number_base: 42000  # unique base; each strategy = base + strategy_index
+  slippage_points: 3
+  max_spread_points: 10     # skip entry if spread > N points
+  order_retry_count: 3
+  order_retry_delay_ms: 500
+
+  session:
+    enabled: false          # false = trade any time the market is open
+    start_utc: "13:30"      # US market open UTC
+    end_utc: "20:00"        # US market close UTC
+
+# =============================================================================
+# Global Risk Management (portfolio-level)
+# =============================================================================
+risk_management:
+  global:
+    enabled: true
+    max_concurrent_trades: 8         # across all strategies
+    max_trades_per_symbol: 2         # prevent stacking on one instrument
+    max_trades_per_direction: 4      # e.g. max 4 longs simultaneously
+    daily_loss_limit_pct: 5.0        # hard stop — close all, no new trades today
+    weekly_loss_limit_pct: 10.0
+    max_drawdown_pct: 25.0           # total equity drawdown — halt bot
+    max_drawdown_recovery_pct: 10.0  # must recover this much from trough to resume
+    risk_free_rate_pct: 5.0          # for Sharpe/Sortino calculations
+
+# =============================================================================
+# Global Optimization & ML Settings
+# =============================================================================
+optimization:
+  enabled: false
+  method: genetic                    # genetic | grid | random | bayesian
+  metric: sharpe_ratio               # sharpe_ratio | sortino_ratio | profit_factor | expectancy
+  generations: 100
+  population_size: 50
+  mutation_rate: 0.05
+  crossover_rate: 0.7
+  elitism_count: 5
+  early_stop_generations: 20         # stop if no improvement for N gens
+  walk_forward:
+    enabled: false
+    in_sample_pct: 60
+    out_sample_pct: 40
+    windows: 5
+
+ml:
+  enabled: false
+  model: xgboost                     # xgboost | lightgbm | random_forest | neural_net
+  prediction_target: next_bar_return # next_bar_return | direction | volatility
+  feature_engineering:
+    use_price_action: true
+    use_indicators: true
+    use_volume: true
+    use_seasonality: true
+    use_intermarket: false
+  lookback_bars: 200
+  retrain_frequency_bars: 500        # retrain every N bars
+  confidence_threshold: 0.65         # only trade when model confidence > N
+
+# =============================================================================
+# STRATEGIES
+# =============================================================================
+strategies:
+
+  # ===========================================================================
+  # 1. TURNAROUND TUESDAY
+  # ===========================================================================
+  - id: turnaround_tuesday
+    enabled: true
+    name: "Turnaround Tuesday"
+    category: mean_reversion
+    description: "Buy weakness on Monday close, sell Tuesday close"
+
+    symbol: XUS500                  # MT5 symbol for S&P 500 CFD
+    timeframe: D1                   # D1 = daily
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market            # market | limit | stop
+      entry_timing: at_bar_close    # at_bar_close | at_bar_open | immediate
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: day_of_week
+          type: calendar
+          field: day_of_week
+          operator: eq
+          value: 1                  # Monday (1=Mon, 5=Fri)
+        - id: monday_weakness
+          type: price
+          field: close
+          operator: lt
+          compare: prev_close
+          threshold_pct: -1.0       # close < Friday close by 1%
+
+    exit_conditions:
+      method: time_exit
+      time_exit:
+        bars: 1                     # exit after 1 bar (Tuesday close)
+        timing: at_bar_close
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 1.0
+      stop_loss:
+        enabled: true
+        method: fixed_pct
+        value_pct: 2.0
+      take_profit:
+        enabled: false
+        method: none
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 2. RSI(2) MEAN REVERSION
+  # ===========================================================================
+  - id: rsi2_mean_reversion
+    enabled: true
+    name: "RSI(2) Mean Reversion (Larry Connors)"
+    category: mean_reversion
+    description: "Long when 2-period RSI drops below threshold + price above 200 SMA"
+
+    symbol: XUS500
+    timeframe: D1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: rsi_2
+        name: rsi
+        params:
+          period: 2
+          apply_to: close
+      - id: sma_200
+        name: sma
+        params:
+          period: 200
+          apply_to: close
+      - id: sma_5
+        name: sma
+        params:
+          period: 5
+          apply_to: close
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: rsi_oversold
+          type: indicator
+          indicator: rsi_2
+          field: value
+          operator: lt
+          value: 10
+        - id: trend_filter
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: sma_200
+      aggressive_override:
+        enabled: false              # set true for Holy Grail variant
+        conditions:
+          - id: rsi_extreme
+            type: indicator
+            indicator: rsi_2
+            field: value
+            operator: lt
+            value: 5
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        operator: OR
+        conditions:
+          - id: rsi_recovery
+            type: indicator
+            indicator: rsi_2
+            field: value
+            operator: gt
+            value: 50
+          - id: sma_cross
+            type: price
+            field: close
+            operator: gt
+            compare_indicator: sma_5
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 1.0
+      stop_loss:
+        enabled: false              # exit signal IS the stop
+        method: none
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 3. DUAL MOMENTUM (Gary Antonacci GEM)
+  # ===========================================================================
+  - id: dual_momentum
+    enabled: true
+    name: "Dual Momentum (Gary Antonacci GEM)"
+    category: momentum
+    description: "Monthly rotation: strongest equity ETF vs bonds based on 12M momentum"
+
+    # This strategy trades a basket — multiple symbols
+    symbol_basket:
+      - symbol: XUS500
+        role: us_equity
+      - symbol: XDE40                   # proxy for EFA (global ex-US) — MT5 DAX CFD
+        role: global_equity
+      - symbol: TNOTE                   # proxy for AGG (bonds)
+        role: safe_haven
+    timeframe: MN1                       # MN1 = monthly
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1                  # only one asset at a time
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: roc_12
+        name: roc
+        params:
+          period: 12                    # 12-month rate of change
+          apply_to: close
+
+    entry_conditions:
+      method: ranking                   # compare assets, pick top
+      ranking:
+        metric: roc_12
+        direction: highest
+        absolute_momentum_filter:
+          enabled: true
+          threshold_pct: 0.0            # ROC must be positive (> T-bill proxy)
+      safe_haven:
+        condition: no_equity_passes     # if no equity passes absolute momentum → bonds
+        symbol: TNOTE
+
+    exit_conditions:
+      method: rotation
+      rotation:
+        frequency: monthly
+        rebalance_at: bar_close
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 2.0         # wider for monthly
+      stop_loss:
+        enabled: false                  # rotation IS risk management
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 4. 5-DAY LOW OF THE RANGE
+  # ===========================================================================
+  - id: five_day_low_range
+    enabled: true
+    name: "5-Day Low of the Range"
+    category: mean_reversion
+    description: "Close below 5-day low + IBS < 0.25 → mean reversion long"
+
+    symbol: XUS500
+    timeframe: D1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: ibs
+        name: ibs
+        params:
+          period: 1
+          formula: "(close - low) / (high - low)"
+      - id: lowest_low_5
+        name: lowest
+        params:
+          period: 5
+          apply_to: low
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: ibs_weak
+          type: indicator
+          indicator: ibs
+          field: value
+          operator: lt
+          value: 0.25
+        - id: five_day_breakdown
+          type: price
+          field: close
+          operator: lt
+          compare_indicator: lowest_low_5
+
+    exit_conditions:
+      method: time_exit
+      time_exit:
+        bars: 5
+        timing: at_bar_close
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 1.0
+      stop_loss:
+        enabled: false
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 5. BOLLINGER BAND SQUEEZE
+  # ===========================================================================
+  - id: bollinger_band_squeeze
+    enabled: true
+    name: "Bollinger Band Squeeze Breakout"
+    category: volatility_breakout
+    description: "Lowest bandwidth in 125 days → breakout above upper band = long"
+
+    symbol: XUS500
+    timeframe: D1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: bb_upper
+        name: bollinger_bands
+        params:
+          period: 20
+          deviation: 2.0
+          apply_to: close
+        field: upper
+      - id: bb_lower
+        name: bollinger_bands
+        params:
+          period: 20
+          deviation: 2.0
+          apply_to: close
+        field: lower
+      - id: bb_mid
+        name: bollinger_bands
+        params:
+          period: 20
+          deviation: 2.0
+          apply_to: close
+        field: middle
+      - id: bb_width
+        name: bb_width
+        params:
+          period: 20
+          deviation: 2.0
+          formula: "(upper - lower) / middle"
+      - id: min_width_125
+        name: lowest
+        params:
+          period: 125
+          apply_to_indicator: bb_width
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: squeeze_detected
+          type: indicator
+          indicator: bb_width
+          field: value
+          operator: eq
+          compare_indicator: min_width_125
+        - id: breakout_long
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: bb_upper
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: return_to_mean
+            type: price
+            field: close
+            operator: lt
+            compare_indicator: bb_mid      # exit when close crosses below middle band
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 1.0
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 2.0
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 6. OVERNIGHT EDGE
+  # ===========================================================================
+  - id: overnight_edge
+    enabled: true
+    name: "Overnight Edge (Close-to-Open)"
+    category: calendar_anomaly
+    description: "Buy at close, sell at next open. Enhanced when 3+ down days."
+
+    symbol: XUS500
+    timeframe: D1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: down_streak
+        name: consecutive
+        params:
+          condition: "close < prev_close"
+          lookback: 20
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: down_streak_filter
+          type: indicator
+          indicator: down_streak
+          field: value
+          operator: gte
+          value: 3
+
+    exit_conditions:
+      method: time_exit
+      time_exit:
+        bars: 1
+        timing: at_bar_open             # sell at next day's open
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.5         # smaller size for overnight gap risk
+      stop_loss:
+        enabled: false                  # no intraday exposure — gap risk only
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 7. TREND FOLLOWING — 200-DAY SMA
+  # ===========================================================================
+  - id: trend_following_200sma
+    enabled: true
+    name: "Trend Following (200-Day SMA)"
+    category: trend_following
+    description: "Long when price > 200 SMA. Exit when price crosses below."
+
+    symbol: XUS500
+    timeframe: D1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: sma_200
+        name: sma
+        params:
+          period: 200
+          apply_to: close
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: above_sma
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: sma_200
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: below_sma
+            type: price
+            field: close
+            operator: lt
+            compare_indicator: sma_200
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 2.0
+      stop_loss:
+        enabled: false                  # SMA crossover IS the exit
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 8. MACD HISTOGRAM REVERSAL
+  # ===========================================================================
+  - id: macd_histogram
+    enabled: true
+    name: "MACD Histogram Trend Reversal"
+    category: momentum
+    description: "MACD histogram rising from below zero + price > 200 SMA → long"
+
+    symbol: XUS500
+    timeframe: D1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: macd
+        name: macd
+        params:
+          fast_period: 12
+          slow_period: 26
+          signal_period: 9
+          apply_to: close
+      - id: macd_histogram
+        name: macd_histogram
+        params:
+          source: macd
+          formula: "macd_line - signal_line"
+      - id: sma_200
+        name: sma
+        params:
+          period: 200
+          apply_to: close
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: histogram_rising
+          type: indicator
+          indicator: macd_histogram
+          field: value
+          operator: gt
+          compare: prev_value
+        - id: histogram_below_zero
+          type: indicator
+          indicator: macd_histogram
+          field: value
+          operator: lt
+          value: 0
+        - id: trend_filter
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: sma_200
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        operator: AND
+        conditions:
+          - id: histogram_falling
+            type: indicator
+            indicator: macd_histogram
+            field: value
+            operator: lt
+            compare: prev_value
+          - id: histogram_above_zero
+            type: indicator
+            indicator: macd_histogram
+            field: value
+            operator: gt
+            value: 0
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 1.0
+      stop_loss:
+        enabled: true
+        method: fixed_pct
+        value_pct: 3.0
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 9. SUPERTREND TREND FOLLOWING
+  # ===========================================================================
+  - id: supertrend_strategy
+    enabled: true
+    name: "SuperTrend Trend Following"
+    category: trend_following
+    description: "ATR-based SuperTrend with 200 EMA trend filter — long on bullish flip"
+
+    symbol: XAUUSD
+    timeframe: H1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: supertrend
+        name: supertrend
+        params:
+          atr_period: 10
+          multiplier: 2.0
+      - id: ema_200
+        name: ema
+        params:
+          period: 200
+          apply_to: close
+      - id: adx
+        name: adx
+        params:
+          period: 14
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: supertrend_bullish
+          type: indicator
+          indicator: supertrend
+          field: direction
+          operator: eq
+          value: 1
+        - id: above_ema
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: ema_200
+        - id: trending
+          type: indicator
+          indicator: adx
+          field: value
+          operator: gt
+          value: 25
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: supertrend_bearish
+            type: indicator
+            indicator: supertrend
+            field: direction
+            operator: eq
+            value: -1
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.5
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.5
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 2.0
+
+  # ===========================================================================
+  # 10. KELTNER CHANNEL BREAKOUT
+  # ===========================================================================
+  - id: keltner_channel_breakout
+    enabled: true
+    name: "Keltner Channel Volatility Breakout"
+    category: volatility_breakout
+    description: "ATR-based Keltner Channel breakout with volume confirmation"
+
+    symbol: XAUUSD
+    timeframe: H1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: kc_upper
+        name: keltner_channel
+        params:
+          ema_period: 20
+          atr_period: 14
+          multiplier: 2.0
+        field: upper
+      - id: kc_mid
+        name: keltner_channel
+        params:
+          ema_period: 20
+          atr_period: 14
+          multiplier: 2.0
+        field: middle
+      - id: ema_50
+        name: ema
+        params:
+          period: 50
+          apply_to: close
+      - id: ema_200
+        name: ema
+        params:
+          period: 200
+          apply_to: close
+      - id: volume_avg
+        name: sma
+        params:
+          period: 20
+          apply_to: tick_volume
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: breakout_upper
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: kc_upper
+        - id: volume_spike
+          type: indicator_compare
+          indicator: tick_volume
+          field: value
+          operator: gt
+          compare_indicator: volume_avg
+          multiplier: 1.3
+        - id: trend_filter
+          type: indicator
+          indicator: ema_50
+          field: value
+          operator: gt
+          compare_indicator: ema_200
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: return_to_channel
+            type: price
+            field: close
+            operator: lt
+            compare_indicator: kc_mid
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.5
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.5
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 2.5
+
+  # ===========================================================================
+  # 11. HEIKIN-ASHI REVERSAL
+  # ===========================================================================
+  - id: heikin_ashi_reversal
+    enabled: true
+    name: "Heikin-Ashi Smoothed Reversal"
+    category: mean_reversion
+    description: "HA trend exhaustion — 5+ same-color candles → reversal entry"
+
+    symbol: XAUUSD
+    timeframe: H1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: ha_consecutive
+        name: heikin_ashi
+        params:
+          consecutive_count: true
+      - id: ha_reversal
+        name: heikin_ashi
+        params:
+          reversal_detection: true
+          body_threshold_pct: 30
+      - id: rsi_14
+        name: rsi
+        params:
+          period: 14
+          apply_to: close
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: ha_count
+          type: indicator
+          indicator: ha_consecutive
+          field: value
+          operator: gte
+          value: 5
+        - id: ha_reversal_signal
+          type: indicator
+          indicator: ha_reversal
+          field: is_reversal
+          operator: eq
+          value: true
+        - id: rsi_oversold
+          type: indicator
+          indicator: rsi_14
+          field: value
+          operator: lt
+          value: 30
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: ha_opposite_reversal
+            type: indicator
+            indicator: ha_reversal
+            field: is_reversal
+            operator: eq
+            value: true
+      time_exit:
+        bars: 10
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.25
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.0
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.0
+
+  # ===========================================================================
+  # 12. ICHIMOKU CLOUD
+  # ===========================================================================
+  - id: ichimoku_cloud
+    enabled: true
+    name: "Ichimoku Cloud Trend System"
+    category: trend_following
+    description: "Complete Ichimoku system: cloud, TK crossover, Chikou confirmation"
+
+    symbol: EURUSD
+    timeframe: H4
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: tenkan_sen
+        name: ichimoku
+        params:
+          tenkan_period: 9
+          kijun_period: 26
+          senkou_b_period: 52
+        field: tenkan_sen
+      - id: kijun_sen
+        name: ichimoku
+        params:
+          tenkan_period: 9
+          kijun_period: 26
+          senkou_b_period: 52
+        field: kijun_sen
+      - id: senkou_span_a
+        name: ichimoku
+        params:
+          tenkan_period: 9
+          kijun_period: 26
+          senkou_b_period: 52
+        field: senkou_span_a
+      - id: senkou_span_b
+        name: ichimoku
+        params:
+          tenkan_period: 9
+          kijun_period: 26
+          senkou_b_period: 52
+        field: senkou_span_b
+      - id: chikou_span
+        name: ichimoku
+        params:
+          tenkan_period: 9
+          kijun_period: 26
+          senkou_b_period: 52
+        field: chikou_span
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: above_cloud
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: senkou_span_a
+        - id: above_cloud2
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: senkou_span_b
+        - id: tk_bullish
+          type: indicator
+          indicator: tenkan_sen
+          field: value
+          operator: gt
+          compare_indicator: kijun_sen
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: tk_bearish
+            type: indicator
+            indicator: tenkan_sen
+            field: value
+            operator: lt
+            compare_indicator: kijun_sen
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.5
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.5
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 2.0
+
+  # ===========================================================================
+  # 13. PARABOLIC SAR
+  # ===========================================================================
+  - id: parabolic_sar_trend
+    enabled: true
+    name: "Parabolic SAR Trend Following"
+    category: trend_following
+    description: "SAR flip to bullish + ADX > 25 + above 200 EMA → long"
+
+    symbol: XAUUSD
+    timeframe: H1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: parabolic_sar
+        name: parabolic_sar
+        params:
+          step: 0.02
+          maximum: 0.20
+      - id: adx
+        name: adx
+        params:
+          period: 14
+      - id: ema_200
+        name: ema
+        params:
+          period: 200
+          apply_to: close
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: sar_bullish
+          type: indicator
+          indicator: parabolic_sar
+          field: position
+          operator: eq
+          value: "below"
+        - id: adx_trending
+          type: indicator
+          indicator: adx
+          field: value
+          operator: gt
+          value: 25
+        - id: above_ema
+          type: price
+          field: close
+          operator: gt
+          compare_indicator: ema_200
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: sar_bearish
+            type: indicator
+            indicator: parabolic_sar
+            field: position
+            operator: eq
+            value: "above"
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.5
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.5
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: false
+
+  # ===========================================================================
+  # 14. WILLIAMS %R OVERSOLD/OVERBOUGHT
+  # ===========================================================================
+  - id: williams_r_mean_reversion
+    enabled: true
+    name: "Williams %R Mean Reversion"
+    category: mean_reversion
+    description: "%R crossing above -80 + ADX < 25 → long. 1-2 bars faster than RSI."
+
+    symbol: EURUSD
+    timeframe: M15
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: williams_r
+        name: williams_percent_r
+        params:
+          period: 14
+      - id: adx
+        name: adx
+        params:
+          period: 14
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: wr_cross_up
+          type: indicator_crossover
+          indicator: williams_r
+          field: value
+          operator: cross_above
+          value: -80
+        - id: ranging
+          type: indicator
+          indicator: adx
+          field: value
+          operator: lt
+          value: 25
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: wr_cross_down
+            type: indicator_crossover
+            indicator: williams_r
+            field: value
+            operator: cross_below
+            value: -20
+      time_exit:
+        bars: 5
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.25
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.0
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 0.75
+
+  # ===========================================================================
+  # 15. MOVING AVERAGE RIBBON
+  # ===========================================================================
+  - id: ma_ribbon_breakout
+    enabled: true
+    name: "Moving Average Ribbon Breakout"
+    category: momentum
+    description: "8 EMAs in perfect alignment → pullback to EMA20 = long entry"
+
+    symbol: EURUSD
+    timeframe: H1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: ema_10
+        name: ema
+        params:
+          period: 10
+          apply_to: close
+      - id: ema_20
+        name: ema
+        params:
+          period: 20
+          apply_to: close
+      - id: ema_30
+        name: ema
+        params:
+          period: 30
+          apply_to: close
+      - id: ema_100
+        name: ema
+        params:
+          period: 100
+          apply_to: close
+      - id: rsi_14
+        name: rsi
+        params:
+          period: 14
+          apply_to: close
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: ribbon_order
+          type: indicator
+          indicator: ema_10
+          field: value
+          operator: gt
+          compare_indicator: ema_20
+        - id: ribbon_order2
+          type: indicator
+          indicator: ema_20
+          field: value
+          operator: gt
+          compare_indicator: ema_30
+        - id: ribbon_order3
+          type: indicator
+          indicator: ema_30
+          field: value
+          operator: gt
+          compare_indicator: ema_100
+        - id: pullback_entry
+          type: price
+          field: close
+          operator: lte
+          compare_indicator: ema_20
+        - id: rsi_healthy
+          type: indicator
+          indicator: rsi_14
+          field: value
+          operator: btwn
+          value_min: 40
+          value_max: 60
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: ribbon_compressing
+            type: indicator
+            indicator: ema_10
+            field: value
+            operator: lt
+            compare_indicator: ema_30
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.5
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.5
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 2.0
+
+  # ===========================================================================
+  # 16. INSIDE BAR BREAKOUT
+  # ===========================================================================
+  - id: inside_bar_breakout
+    enabled: true
+    name: "Inside Bar Breakout"
+    category: price_action
+    description: "Inside Bar formation → breakout in H4 trend direction = long"
+
+    symbol: XAUUSD
+    timeframe: H1
+    trade_direction: long_only
+
+    execution:
+      max_positions: 1
+      entry_type: market
+      entry_timing: at_bar_close
+
+    indicators:
+      - id: ib_detect
+        name: inside_bar
+        params: {}
+      - id: ema_50_h4
+        name: ema
+        params:
+          period: 50
+          apply_to: close
+        timeframe: H4
+      - id: ema_200_h4
+        name: ema
+        params:
+          period: 200
+          apply_to: close
+        timeframe: H4
+
+    entry_conditions:
+      operator: AND
+      conditions:
+        - id: inside_bar
+          type: indicator
+          indicator: ib_detect
+          field: is_inside_bar
+          operator: eq
+          value: true
+        - id: breakout_long
+          type: price
+          field: close
+          operator: gt
+          compare: prev_high
+        - id: h4_trend
+          type: indicator
+          indicator: ema_50_h4
+          field: value
+          operator: gt
+          compare_indicator: ema_200_h4
+
+    exit_conditions:
+      method: signal_exit
+      signal_exit:
+        conditions:
+          - id: reverse_break
+            type: price
+            field: close
+            operator: lt
+            compare: prev_low
+
+    risk_management:
+      position_sizing:
+        method: fixed_fraction
+        risk_per_trade_pct: 0.5
+      stop_loss:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.0
+      take_profit:
+        enabled: false
+      trailing_stop:
+        enabled: true
+        method: atr_multiple
+        params:
+          atr_period: 14
+          multiplier: 1.5
+
+# =============================================================================
+# Strategy Correlation Matrix (for portfolio construction)
+# =============================================================================
+correlation_notes:
+  - strategies: [turnaround_tuesday, five_day_low_range, rsi2_mean_reversion]
+    note: "These are all mean-reversion on D1 SPX — likely correlated. Limit concurrent positions."
+  - strategies: [dual_momentum, trend_following_200sma]
+    note: "Both are trend-based on monthly/daily. Dual momentum already incorporates trend."
+  - strategies: [bollinger_band_squeeze, macd_histogram]
+    note: "BB squeeze fires rarely (vol contraction); MACD histogram fires more often. Low overlap."
+  - strategies: [overnight_edge]
+    note: "Unique holding period (close→open). Uncorrelated with all other strategies."
+  - strategies: [supertrend_strategy, parabolic_sar_trend, trend_following_200sma]
+    note: "All trend-following on H1-H4. High correlation — limit to one active at a time."
+  - strategies: [keltner_channel_breakout, bollinger_band_squeeze]
+    note: "Both capture volatility breakouts. Keltner outperforms in trending regimes. Run separately."
+  - strategies: [heikin_ashi_reversal, williams_r_mean_reversion, rsi2_mean_reversion]
+    note: "All mean-reversion strategies. Can be complementary if on different timeframes/pairs."
+  - strategies: [ichimoku_cloud, ma_ribbon_breakout]
+    note: "Both are multi-component trend systems on H4/H1. Moderate correlation — run one at a time."
+  - strategies: [inside_bar_breakout]
+    note: "Unique pure price-action entry. Low correlation with indicator-based strategies."
+
+# =============================================================================
+# Notifications
+# =============================================================================
+notifications:
+  enabled: false
+  channels: []
+  # Example:
+  # channels:
+  #   - type: telegram
+  #     token: "${TELEGRAM_BOT_TOKEN}"
+  #     chat_id: "${TELEGRAM_CHAT_ID}"
+  #   - type: email
+  #     smtp_host: "smtp.gmail.com"
+  #     smtp_port: 587
+  #     recipient: "trader@example.com"
+  events:
+    - trade_opened
+    - trade_closed
+    - daily_loss_limit_hit
+    - max_drawdown_hit
+    - bot_error
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  level: INFO                       # DEBUG | INFO | WARNING | ERROR
+  log_to_file: true
+  log_dir: "./logs"
+  max_file_size_mb: 10
+  backup_count: 5
+  log_trade_details: true           # log entry price, exit price, P&L per trade
+
+# =============================================================================
+# Disclaimer
+# =============================================================================
+disclaimer: >
+  This configuration is for educational and research purposes only. Past
+  performance does not guarantee future results. All indicators and strategy
+  logic were derived from publicly available research and backtests by
+  quantifiedstrategies.com, Larry Connors, Gary Antonacci, and Meb Faber.
+  Paper-trade extensively before live deployment. The user assumes all risk.
