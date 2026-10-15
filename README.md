@@ -13,8 +13,9 @@ Backend-first scaffold for an MT5 AI trading bot desktop application.
 | Indicators (SMA, EMA, RSI) | Implemented |
 | Desktop screens | Implemented — five live screens, three explicit placeholders |
 | Chart rendering | Implemented — candlesticks and line charts painted with `QPainter` |
-| Strategy rule evaluation | **Not implemented** — `StrategyEngine.evaluate_tick` returns no signals |
-| AI prediction and training | **Not implemented** — advisory placeholder and a `skipped` trainer |
+| Strategy rule evaluation | Implemented — declarative conditions, evaluated vectorised |
+| Backtesting | Implemented — causal single-symbol bar-by-bar simulator |
+| AI prediction and training | Implemented — scikit-learn meta-filter with walk-forward validation |
 | Position, daily P/L and drawdown tracking | **Not implemented** — the connector has no positions or deals feed |
 
 Live order submission is implemented but has not been exercised against a real
@@ -107,6 +108,48 @@ Themes are dark (default) and light, selected with `MT5_THEME` or from the
 Settings tab. Both use solid surfaces, a single accent colour and monospace
 figures for prices; there are no gradients, glows or decorative animation.
 
+## Strategies and backtesting
+
+`strategies/catalogue/` holds configs taken from the
+`britonsir-bot/mt5-trading-strategies` repository. `load_specs()` returns all 16
+executable strategies and `summarise()` reports which of them can be evaluated
+here and why any cannot. At present 15 of 16 evaluate; `dual_momentum` is
+blocked because its ranking, rotation and safe-haven logic needs a multi-asset
+universe.
+
+**The `documented` block on each spec is a citation, not a measurement.** Those
+win rates, profit factors and drawdowns are what the YAML quotes from external
+literature and vendor research; nothing in this repository measured them. Only
+`BacktestResult` carries numbers this codebase computed, and every result states
+its `data_source` and a `simulated` flag so a run on mock candles cannot be
+mistaken for an edge.
+
+```python
+from core.mt5_connector import MockMt5Connector
+from strategies import Backtester, load_specs, summarise
+
+specs = load_specs()
+print(summarise(specs))
+result = Backtester().run(specs[8], MockMt5Connector().get_ohlc("XAUUSD", "H1", 1000),
+                          data_source="simulated")
+print(result.metrics)
+```
+
+The rule evaluator covers the whole vocabulary the configs use: `calendar`,
+`price`, `indicator`, `indicator_compare` and `indicator_crossover` conditions
+over `eq`, `lt`, `lte`, `gt`, `gte`, `cross_above`, `cross_below` and `btwn`,
+against scalars, other indicators, `prev_close` / `prev_high` / `prev_low`,
+`prev_value` (a series against its own previous value) and higher-timeframe
+references such as `ema_200_h4`. An unresolvable field blocks the strategy
+instead of silently comparing the wrong series.
+
+`Backtester` fills a signal seen on bar `t` at the open of bar `t + 1`, moves a
+trailing stop only on a closed bar, and measures drawdown on the closed-trade
+equity curve. Positions are sized from `risk_per_trade_pct` against the initial
+stop distance. Rules that cannot fire are reported rather than left as a silent
+zero: a run explains whether the conditions never fired on the data or never
+coincided at all.
+
 ## Risk controls
 
 `RiskManager.evaluate` requires the account state explicitly — open trade count,
@@ -121,6 +164,28 @@ Session windows support overnight ranges such as `22:00`–`02:00`, and timezone
 aware window bounds are honoured by converting `now` into the window's timezone.
 When the window carries no timezone it is compared against the wall clock of
 `now`.
+
+## AI meta-filter
+
+`ai/` is a traditional scikit-learn meta-filter that predicts `next_bar_return`
+and gates strategy signals, matching the `ml:` block in the bot config
+(`confidence_threshold: 0.65`, `lookback_bars: 200`). Models are
+`random_forest` (default), `extra_trees`, `gradient_boosting` and
+`logistic_regression`; no deep-learning dependency is used. The config names
+`xgboost`, which is not installed and is not required.
+
+Correctness rules the module enforces and tests: a feature row at bar `t` uses
+only bars up to `t`; the label is `close[t + horizon] > close[t]` with the final
+`horizon` rows dropped; rows with non-finite warm-up features are dropped with
+`X`, `y` and the index kept aligned; the train/validation split is
+chronological and never shuffled. `MLEngine.walk_forward` validates on anchored
+out-of-sample folds.
+
+The tests include a leakage guard, a shuffled-label control that must not
+generalise, and a synthetic-signal test that requires the pipeline to clear a
+stated accuracy floor above chance. Those tests measure the *machinery*, not
+market edge. `InferenceService.recommend()` reports `trend="untrained"` while no
+model is fitted rather than inventing a neutral view.
 
 ## Tests
 
